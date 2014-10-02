@@ -145,7 +145,8 @@ function! dbext_dbi#DBI_initialize()
        let g:dbext_default_DBI_max_column_width = 0
     endif
     if !exists("dbext_default_DBI_column_delimiter")
-       let g:dbext_default_DBI_column_delimiter = "  "
+       " let g:dbext_default_DBI_column_delimiter = "  "
+       let g:dbext_default_DBI_column_delimiter = "|"
     endif
     if !exists("dbext_dbi_trace_level")
        let g:dbext_dbi_trace_level = 0
