@@ -1,11 +1,11 @@
 " dbext.vim - Commn Database Utility
 " Copyright (C) 2002-10, Peter Bagyinszki, David Fishburn
 " ---------------------------------------------------------------
-" Version:       20.00
+" Version:       21.00
 " Maintainer:    David Fishburn <dfishburn dot vim at gmail dot com>
 " Authors:       Peter Bagyinszki <petike1 at dpg dot hu>
 "                David Fishburn <dfishburn dot vim at gmail dot com>
-" Last Modified: 2013 Sep 18
+" Last Modified: 2014 Dec 03
 " Based On:      sqlplus.vim (author: Jamis Buck)
 " Created:       2002-05-24
 " Homepage:      http://vim.sourceforge.net/script.php?script_id=356
@@ -38,7 +38,7 @@ if v:version < 700
     echomsg "dbext: Version 4.00 or higher requires Vim7.  Version 3.50 can stil be used with Vim6."
     finish
 endif
-let g:loaded_dbext_auto = 2000
+let g:loaded_dbext_auto = 2100
 
 " Turn on support for line continuations when creating the script
 let s:cpo_save = &cpo
@@ -69,14 +69,14 @@ let s:dbext_buffer_last       = -1
 " }}}
 
 " Build internal lists {{{
-function! s:DB_buildLists()
+function! dbext#DB_buildLists()
     " Available DB types - maintainer in ()
     let s:db_types_mv = []
-    " Sybase Adaptive Server Anywhere (fishburn)
+    " SAP Sybase SQL Anywhere (SA) / Adaptive Server Anywhere (ASA) (fishburn)
     call add(s:db_types_mv, 'ASA')
-    " Sybase Adaptive Server Enterprise (fishburn)
+    " SAP Sybase Adaptive Server Enterprise (ASE) (fishburn)
     call add(s:db_types_mv, 'ASE')
-    " DB2 (fishburn)
+    " IBM DB2 (fishburn)
     call add(s:db_types_mv, 'DB2')
     " Ingres (schoppet)
     call add(s:db_types_mv, 'INGRES')
@@ -88,18 +88,20 @@ function! s:DB_buildLists()
     call add(s:db_types_mv, 'ORA')
     " PostgreSQL (fishburn)
     call add(s:db_types_mv, 'PGSQL')
-    " Microsoft Sql Server (fishburn)
+    " Microsoft SQL Server (fishburn)
     call add(s:db_types_mv, 'SQLSRV')
     " SQLite (fishburn)
     call add(s:db_types_mv, 'SQLITE')
     " Oracle Rdb (stern)
     call add(s:db_types_mv, 'RDB')
-    " Sybase SQL Anywhere UltraLite (fishburn)
+    " SAP Sybase SQL Anywhere UltraLite (UL) (fishburn)
     call add(s:db_types_mv, 'ULTRALITE')
     " Firebird (fishburn)
     call add(s:db_types_mv, 'FIREBIRD')
-    " Firebird (fishburn)
+    " SAP HANA (fishburn)
     call add(s:db_types_mv, 'HANA')
+    " SAP Sybase IQ (fishburn)
+    call add(s:db_types_mv, 'IQ')
 
     " The following are only available with the
     " Perl DBI extension plug.
@@ -523,9 +525,8 @@ endfunction
 
 "" Set buffer parameter value
 function! s:DB_set(name, value)
+    let value = a:value
     if index(s:all_params_mv, a:name) > -1
-        let value = a:value
-
         " If a value of -1 is provided assume an error
         " somewhere an abort
         if value == -1 
@@ -578,10 +579,12 @@ function! s:DB_set(name, value)
             call dbext#DB_setTitle()
         endif
     elseif index(s:config_dbi_mv, a:name) > -1
-        if a:value."" == ""
+        if value."" == ""
             call s:DB_set(a:name, s:DB_getDefault(a:name))
         else
-            let b:dbext_{a:name} = a:value
+            let value = substitute(value, '\\t\>', "\t", 'g')
+            let value = substitute(value, '\\<TAB>', "\t", 'g')
+            let b:dbext_{a:name} = value
         endif
         if a:name == 'DBI_commit_on_disconnect'
             " Special case since this option must be set
@@ -592,13 +595,13 @@ function! s:DB_set(name, value)
             " a PromptForParameters during defaulting
             " if s:DB_get('type') =~ '\<DBI\>\|\<ODBC\>'
             if exists('b:dbext_type') && b:dbext_type =~ '\<DBI\>\|\<ODBC\>'
-                call s:DB_DBI_setOption(a:name, a:value)
+                call s:DB_DBI_setOption(a:name, value)
             endif
         endif
     elseif index(s:saved_conn_params_mv, a:name) > -1
         " Store these parameters as script variables
         " since only 1 should ever be active at a time
-        let s:dbext_{a:name} = a:value
+        let s:dbext_{a:name} = value
     else
         if index(s:db_dbi_mv, a:name) > -1
             let rc = 0
@@ -606,7 +609,7 @@ function! s:DB_set(name, value)
             " a PromptForParameters during defaulting
             " if s:DB_get('type') =~ '\<DBI\>\|\<ODBC\>'
             if exists('b:dbext_type') && b:dbext_type =~ '\<DBI\>\|\<ODBC\>'
-                let rc = s:DB_DBI_setOption(a:name, a:value)
+                let rc = s:DB_DBI_setOption(a:name, value)
             endif
             return rc
         endif
@@ -903,6 +906,12 @@ function! s:DB_getDefault(name)
     elseif a:name ==# "ASA_on_error"            |return (exists("g:dbext_default_ASA_on_error")?g:dbext_default_ASA_on_error.'':'exit')
     elseif a:name ==# "ASA_SQL_Top_pat"         |return (exists("g:dbext_default_ASA_SQL_Top_pat")?g:dbext_default_ASA_SQL_Top_pat.'':'\(\cselect\)')
     elseif a:name ==# "ASA_SQL_Top_sub"         |return (exists("g:dbext_default_ASA_SQL_Top_sub")?g:dbext_default_ASA_SQL_Top_sub.'':'\1 TOP @dbext_topX ')
+    elseif a:name ==# "IQ_bin"                  |return (exists("g:dbext_default_IQ_bin")?g:dbext_default_IQ_bin.'':'dbisql')
+    elseif a:name ==# "IQ_cmd_terminator"       |return (exists("g:dbext_default_IQ_cmd_terminator")?g:dbext_default_IQ_cmd_terminator.'':';')
+    elseif a:name ==# "IQ_cmd_options"          |return (exists("g:dbext_default_IQ_cmd_options")?g:dbext_default_IQ_cmd_options.'':'-nogui')
+    elseif a:name ==# "IQ_on_error"             |return (exists("g:dbext_default_IQ_on_error")?g:dbext_default_IQ_on_error.'':'exit')
+    elseif a:name ==# "IQ_SQL_Top_pat"          |return (exists("g:dbext_default_IQ_SQL_Top_pat")?g:dbext_default_IQ_SQL_Top_pat.'':'\(\cselect\)')
+    elseif a:name ==# "IQ_SQL_Top_sub"          |return (exists("g:dbext_default_IQ_SQL_Top_sub")?g:dbext_default_IQ_SQL_Top_sub.'':'\1 TOP @dbext_topX ')
     elseif a:name ==# "ULTRALITE_bin"            |return (exists("g:dbext_default_ULTRALITE_bin")?g:dbext_default_ULTRALITE_bin.'':'dbisql')
     elseif a:name ==# "ULTRALITE_cmd_terminator" |return (exists("g:dbext_default_ULTRALITE_cmd_terminator")?g:dbext_default_ULTRALITE_cmd_terminator.'':';')
     elseif a:name ==# "ULTRALITE_cmd_options"    |return (exists("g:dbext_default_ULTRALITE_cmd_options")?g:dbext_default_ULTRALITE_cmd_options.'':'-nogui -ul')
@@ -965,7 +974,7 @@ function! s:DB_getDefault(name)
     elseif a:name ==# "PGSQL_cmd_terminator"    |return (exists("g:dbext_default_PGSQL_cmd_terminator")?g:dbext_default_PGSQL_cmd_terminator.'':';')
     elseif a:name ==# "PGSQL_SQL_Top_pat"       |return (exists("g:dbext_default_PGSQL_SQL_Top_pat")?g:dbext_default_PGSQL_SQL_Top_pat.'':'\(.*\)')
     elseif a:name ==# "PGSQL_SQL_Top_sub"       |return (exists("g:dbext_default_PGSQL_SQL_Top_sub")?g:dbext_default_PGSQL_SQL_Top_sub.'':'\1 LIMIT @dbext_topX ')
-    elseif a:name ==# "PGSQL_pgpass"            |return (exists("g:dbext_default_PGSQL_pgpass")?g:dbext_default_PGSQL_pgpass.'':'$HOME/.pgpass')
+    elseif a:name ==# "PGSQL_pgpass"            |return (exists("g:dbext_default_PGSQL_pgpass")?g:dbext_default_PGSQL_pgpass.'': ((has('maxunix') || has('unix')) ? '$HOME/.pgpass' : '$HOME/pgpass.conf'))
     elseif a:name ==# "RDB_bin"                 |return (exists("g:dbext_default_RDB_bin")?g:dbext_default_RDB_bin.'':'mc sql$')
     elseif a:name ==# "RDB_cmd_header"          |return (exists("g:dbext_default_RDB_cmd_header")?g:dbext_default_RDB_cmd_header.'':"".
                 \ "set line length 10000\n" .
@@ -1957,6 +1966,251 @@ function! s:DB_ASA_getDictionaryView()
                 \ " ORDER BY ".(s:DB_get('dict_show_owner')==1?"vcreator||'.'||":'')."viewname; "
                 \ )
     return s:DB_ASA_stripHeaderFooter(result)
+endfunction 
+"}}}
+" IQ exec {{{
+function! s:DB_IQ_execSql(str)
+    " All defaults are specified in the DB_getDefault function.
+    " This contains the defaults settings for all database types
+    let terminator = dbext#DB_getWType("cmd_terminator")
+
+    let output = dbext#DB_getWType("cmd_header") 
+    " Check if a login_script has been specified
+    let output = output.s:DB_getLoginScript(s:DB_get("login_script"))
+    let output = output.a:str
+    " Only include a command terminator if one has not already
+    " been added
+    if output !~ s:DB_escapeStr(terminator) . 
+                \ '['."\n".' \t]*$'
+        let output = output . terminator
+    endif
+
+    exe 'redir! > ' . s:dbext_tempfile
+    silent echo output
+    redir END
+
+    let dbext_bin = s:DB_fullPath2Bin(dbext#DB_getWType("bin"))
+
+    if s:DB_get("host") != "" || s:DB_get("port") != ""
+        let links = 'tcpip(' .
+                \ s:DB_option('host=', s:DB_get("host"), ';') .
+                \ s:DB_option('port=', s:DB_get("port"), '') .
+                \ ')'
+    else
+        let links = ""
+    endif
+    let cmd = dbext_bin .  ' ' . dbext#DB_getWType("cmd_options") . ' ' .
+                \ s:DB_option('-onerror ', dbext#DB_getWType("on_error"), ' ') .
+                \ ' -c "' .
+                \ s:DB_option('uid=', s:DB_get("user"), ';') .
+                \ s:DB_option('pwd=', s:DB_get("passwd"), ';') .
+                \ s:DB_option('dsn=', s:DB_get("dsnname"), ';') .
+                \ s:DB_option('eng=', s:DB_get("srvname"), ';') .
+                \ s:DB_option('dbn=', s:DB_get("dbname"), ';') .
+                \ s:DB_option('links=', links, ';') .
+                \ s:DB_option('', dbext#DB_getWTypeDefault("extra"), '') 
+    if has("win32") && s:DB_get("integratedlogin") == 1
+        let cmd = cmd . 
+                \ s:DB_option('int=', 'yes', ';') 
+    endif
+    let cmd = cmd .  '" ' . 
+                \ ' read ' . s:dbext_tempfile
+    let result = s:DB_runCmd(cmd, output, "")
+
+    return result
+endfunction
+
+function! s:DB_IQ_describeTable(table_name)
+    let owner  = s:DB_getObjectOwner(a:table_name)
+    let object = s:DB_getObjectName(a:table_name)
+    let owner  = ( strlen(owner) > 0 ? owner : '' ) 
+    " return s:DB_IQ_execSql("call sp_jdbc_columns('".object."', '".owner."');")
+    let sql =  ''.
+                \ "select * ".
+                \ "  from SYS.SYSCOLUMNS as sc ".
+                \ " where sc.tname = '".object."' "
+                " \ "select sc.creator ".
+                " \ "     , sc.tname ".
+                " \ "     , sc.cname ".
+                " \ "     , sc.coltype ".
+                " \ "     , sc.in_primary_key ".
+                " \ "     , sc.nulls ".
+                " \ "     , sc.length ".
+                " \ "     , sc.default_value ".
+                " \ "     , sc.colno ".
+                " \ "  from SYS.SYSCOLUMNS as sc ".
+                " \ " where sc.tname = '".object."' "
+
+    if owner != ''
+        let sql = sql .
+                    \" and sc.creator = '".owner."' "
+    endif
+    let sql = sql .
+                \ " order by sc.colno asc "
+    return s:DB_IQ_execSql(sql)
+endfunction
+
+function! s:DB_IQ_describeProcedure(proc_name)
+    let owner  = s:DB_getObjectOwner(a:proc_name)
+    let object = s:DB_getObjectName(a:proc_name)
+    let owner  = ( strlen(owner) > 0 ? owner : '' ) 
+    " return s:DB_IQ_execSql("call sp_sproc_columns('".object."', '".owner."');")
+    let sql =  ''.
+                \ "select * ".
+                \ "  from SYS.SYSPROCPARMS as pp ".
+                \ " where pp.parmtype = 0 ".
+                \ "   and pp.procname = '".object."' "
+
+    if owner != ''
+        let sql = sql .
+                    \" and pp.creator = '".owner."' "
+    endif
+    " let sql = sql .
+    "             \ " order by pp.parm_id asc "
+    return s:DB_IQ_execSql(sql)
+    " let sql =  ''.
+    "             \ "select u.user_name ".
+    "             \ "     , p.proc_name ".
+    "             \ "     , pp.parm_name ".
+    "             \ "     , d.domain_name ".
+    "             \ "     , d.".'"precision" '.
+    "             \ "     , pp.width ".
+    "             \ "     , pp.scale ".
+    "             \ "     , IFNULL(pp.".'"default",'." 'Y', 'N') as allows_nulls ".
+    "             \ "     , CASE  ".
+    "             \ "       WHEN (pp.parm_mode_in = 'Y' AND pp.parm_mode_out = 'Y') THEN 'IO' ".
+    "             \ "       WHEN (pp.parm_mode_in = 'Y') THEN 'I' ".
+    "             \ "       ELSE 'N' ".
+    "             \ "       END as in_out ".
+    "             \ "     , pp.parm_id ".
+    "             \ "  from SYS.SYSPROCEDURE as p ".
+    "             \ "     , SYS.SYSPROCPARM as pp ".
+    "             \ "     , SYS.SYSDOMAIN as d ".
+    "             \ "     , SYS.SYSUSERPERM as u ".
+    "             \ " where p.proc_id = pp.proc_id ".
+    "             \ "   and pp.domain_id = d.domain_id ".
+    "             \ "   and pp.parm_type = 0 ".
+    "             \ "   and p.creator = u.user_id ".
+    "             \ "   and p.proc_name = '".object."' "
+
+    " if owner != ''
+    "     let sql = sql .
+    "                 \" and u.user_name = '".owner."' "
+    " endif
+    " let sql = sql .
+    "             \ " order by pp.parm_id asc "
+    " return s:DB_IQ_execSql(sql)
+endfunction
+
+function! s:DB_IQ_getListTable(table_prefix)
+    let owner      = s:DB_getObjectOwner(a:table_prefix)
+    let table_name = s:DB_getObjectName(a:table_prefix)
+    let sql = ''.
+                \ "select tname, creator " .
+                \ "  from SYS.SYSCATALOG " .
+                \ " where tname   like '" . table_name . "%' ".
+                \ "   and creator like '" . owner . "%' ".
+                \ " order by tname"
+    return s:DB_IQ_execSql(sql)
+    " return s:DB_IQ_execSql("call sp_jdbc_tables('" .
+    "             \ table_name .
+    "             \ "%', '" .
+    "             \ owner .
+    "             \ "%');")
+endfunction
+
+function! s:DB_IQ_getListProcedure(proc_prefix)
+    let owner   = s:DB_getObjectOwner(a:proc_prefix)
+    let object  = s:DB_getObjectName(a:proc_prefix)
+    let sql = ''.
+                \ "select p.proc_name, u.user_name " .
+                \ "  from SYS.SYSPROCEDURE as p ".
+                \ "     , SYS.SYSUSERPERM as u ".
+                \ " where p.creator = u.user_id ".
+                \ "   and p.proc_name like '".object."%' ".
+                \ "   and u.user_name like '".owner."%' ".
+                \ " order by proc_name"
+    return s:DB_IQ_execSql(sql)
+    " return s:DB_IQ_execSql(
+    "             \ "call sp_jdbc_stored_procedures(null, null, ".
+    "             \ "'".a:proc_prefix."%');")
+endfunction
+
+function! s:DB_IQ_getListView(view_prefix)
+    let owner      = s:DB_getObjectOwner(a:view_prefix)
+    let view_name  = s:DB_getObjectName(a:view_prefix)
+    let query      = 
+                \ "SELECT viewname, vcreator ".
+                \ " FROM SYS.SYSVIEWS ".
+                \ " WHERE viewname LIKE '".view_name."%'"
+    if strlen(owner) > 0
+        let query = query .
+                    \ "   AND vcreator = '".owner."' ".
+                    \ " ORDER BY vcreator, viewname;"
+    else
+        let query = query .
+                    \ " ORDER BY vcreator, viewname;"
+    endif
+    return s:DB_IQ_execSql(query)
+endfunction 
+
+function! s:DB_IQ_getListColumn(table_name) 
+    let owner      = s:DB_getObjectOwner(a:table_name)
+    let table_name = s:DB_getObjectName(a:table_name)
+    let query = ''.
+                \ "select cname ".
+                \ "  from SYS.SYSCOLUMNS as sc ".
+                \ " where sc.tname = '".table_name."' "
+    if strlen(owner) > 0
+        let query = query .
+                    \ "   AND sc.creator = '".owner."' "
+    endif
+    let query = query .
+                \ " ORDER BY colno"
+    let result = s:DB_IQ_execSql( query )
+    return s:DB_IQ_stripHeaderFooter(result)
+endfunction 
+
+function! s:DB_IQ_stripHeaderFooter(result)
+    " Strip off column headers ending with a newline
+    let stripped = substitute( a:result, '\_.*-\s*'."[\<C-J>]", '', '' )
+    let g:dbext_rows_affected = matchstr(stripped, '\((\)\?\(First\s\+\)\?\zs\d\+\ze row')
+    " Strip off query statistics
+    let stripped = substitute( stripped, '\((\)\?\(First\s\+\)\?\d\+ row\_.*', '', '' )
+    " Strip off trailing spaces
+    " let stripped = substitute( stripped, '\(\<\w\+\>\)\s*', '\1', 'g' )
+    let stripped = substitute( stripped, '\(\<\w\+\>\)\s*\(\n\)', '\1\2', 'g' )
+    " Strip blank lines
+    let stripped = substitute( stripped, '\(\n\)\(\n\)', '', 'g' )
+    return stripped
+endfunction 
+
+function! s:DB_IQ_getDictionaryTable() 
+    let result = s:DB_IQ_execSql(
+                \ "select ".(s:DB_get('dict_show_owner')==1?"creator||'.'||":'')."tname " .
+                \ "  from SYS.SYSCATALOG " .
+                \ " order by ".(s:DB_get('dict_show_owner')==1?"creator, ":'')."tname"
+                \ )
+    return s:DB_IQ_stripHeaderFooter(result)
+endfunction 
+
+function! s:DB_IQ_getDictionaryProcedure() 
+    let result = s:DB_IQ_execSql(
+                \ "SELECT ".(s:DB_get('dict_show_owner')==1?"sup.user_name||'.'||":'')."sp.proc_name " .
+                \ "  FROM SYS.SYSPROCEDURE sp, SYS.SYSUSERPERM sup  " .
+                \ " WHERE sp.creator = sup.user_id  " .
+                \ " ORDER BY ".(s:DB_get('dict_show_owner')==1?"sup.user_name, ":'')."sp.proc_name "
+                \ )
+    return s:DB_IQ_stripHeaderFooter(result)
+endfunction 
+
+function! s:DB_IQ_getDictionaryView() 
+    let result = s:DB_IQ_execSql(
+                \ "SELECT ".(s:DB_get('dict_show_owner')==1?"vcreator||'.'||":'')."viewname" .
+                \ "  FROM SYS.SYSVIEWS " .
+                \ " ORDER BY ".(s:DB_get('dict_show_owner')==1?"vcreator||'.'||":'')."viewname; "
+                \ )
+    return s:DB_IQ_stripHeaderFooter(result)
 endfunction 
 "}}}
 " UltraLite exec {{{
@@ -6554,6 +6808,7 @@ function! s:DB_runCmd(cmd, sql, result)
         else
             let result = a:result
         endif
+        let l:shell_error = v:shell_error
 
         call s:DB_addToResultBuffer(result, "add")
 
@@ -6564,14 +6819,14 @@ function! s:DB_runCmd(cmd, sql, result)
 
         " If there was an error, show the command just executed
         " for debugging purposes
-        if (v:shell_error && l:db_type !~ '\<DBI\>\|\<ODBC\>') ||
+        if (l:shell_error && l:db_type !~ '\<DBI\>\|\<ODBC\>') ||
                     \ (dbi_result == -1 && l:db_type =~ '\<DBI\>\|\<ODBC\>') 
             let output = "To change connection parameters:\n" .
                         \ ":DBPromptForBufferParameters\n" .
                         \ "Or\n" .
                         \ ":DBSetOption user\|passwd\|dsnname\|srvname\|dbname\|host\|port\|...=<value>\n" .
                         \ ":DBSetOption user=tiger:passwd=scott\n" .
-                        \ "Last command(rc=".v:shell_error."):\n" .
+                        \ "Last command(rc=".l:shell_error."):\n" .
                         \ a:cmd . "\n" .
                         \ "Last SQL:\n" .
                         \ a:sql . "\n" 
@@ -7858,6 +8113,50 @@ function! s:DB_parseProfile(value)
 
     let profile_name = "g:dbext_default_profile_" . a:value
 
+    if !exists(profile_name)
+        let rc = -1
+        call s:DB_warningMsg('dbext: ' . profile_name 
+                                \ . ' does not exist' )
+        return -1
+    endif
+
+    " Reset all connection parameters to blanks since a 
+    " profile should set everything required
+    let no_defaults = 0
+    let rc = s:DB_resetBufferParameters(no_defaults)
+
+    let b:dbext_profile = a:value
+    let profile_value   = g:dbext_default_profile_{a:value}
+
+    if profile_value =~? '\<profile\>'
+        let rc = -1
+        call s:DB_warningMsg('dbext: Profiles cannot be nested' )
+        return -1
+    endif
+
+    let rc = dbext#DB_setMultipleOptions(profile_value)
+
+    let rc = s:DB_validateBufferParameters()
+
+    return rc
+endfunction
+function! s:DB_parseProfileOld(value)
+
+    " Shortcut
+    if a:value =~ '^\s*$'
+        return 0
+    endif
+
+    " Check for non-word characters to make sure the profile
+    " name was parsed correctly
+    if match(a:value, '\W') > -1
+        let rc = -1
+        call s:DB_warningMsg('dbext: Invalid profile name: ' . a:value) 
+        return -1
+    endif
+
+    let profile_name = "g:dbext_default_profile_" . a:value
+
     if exists(profile_name)
         let b:dbext_profile = a:value
         let profile_value = g:dbext_default_profile_{a:value}
@@ -8497,7 +8796,7 @@ function! dbext#DB_disconnectAll()
 endfunction 
 
 "}}}
-call s:DB_buildLists()
+call dbext#DB_buildLists()
 
 call s:DB_resetGlobalParameters()
 
